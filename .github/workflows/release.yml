@@ -1,0 +1,82 @@
+name: LibJpegTurbo Windows Build
+
+on: 
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'LibTurboJpeg tag'
+    
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    env:
+      VCINSTALLDIR: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+          ref: ${{ github.event.inputs.tags }}
+
+      - name: Set up x64 build architecture environment
+        shell: cmd
+        run: call "${{env.VCINSTALLDIR}}\Auxiliary\Build\vcvars64.bat"
+          
+      - name: Set up nasm
+        uses: ilammy/setup-nasm@v1
+          
+      # Build packages
+      - name: Build packages        
+        env:
+          PLATFORM: windows          
+        shell: bash
+        run: |
+          mkdir build
+          cd build
+          cmake -DCMAKE_INSTALL_PREFIX=D:/libturbo -G"Visual Studio 17" ..
+          cmake --build . --target install --config Release -- -nologo -v:m -maxcpucount
+
+      - name: Compress
+        shell: powershell
+        run: |          
+          cd D:/libturbo
+          Compress-Archive * windows.zip
+          
+
+      # upload artifacts (only on tagged commit)
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: LibJpegTurbo
+          path: |
+            D:/libturbo/windows.zip
+  
+################################
+###### Publish Releases ########
+################################
+
+  publish:
+    name: Publish Releases
+    needs: [windows]
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Download artifacts from previous build process
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts
+
+      # create draft release and upload artifacts
+      - name: Create draft release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: libjpeg-turbo ${{ github.event.inputs.tags }}
+          tag_name: ${{ github.event.inputs.tags }}
+          files: "artifacts/**"
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
